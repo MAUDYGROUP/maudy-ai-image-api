@@ -29,6 +29,11 @@ COMFY_TIMEOUT = 300
 # API
 AI_IMAGE_API_KEY = os.getenv("AI_IMAGE_API_KEY")
 
+# ============================================================
+# GENERATION QUEUE / GPU LOCK
+# ============================================================
+
+generation_lock = asyncio.Lock()
 
 # ============================================================
 # REQUEST MODEL
@@ -228,7 +233,6 @@ async def generate(
     request: GenerateRequest,
     x_api_key: str | None = Header(default=None, alias="X-API-Key")
 ):
-
     if not AI_IMAGE_API_KEY:
         raise HTTPException(
             status_code=503,
@@ -250,6 +254,12 @@ async def generate(
             detail="Prompt tidak boleh kosong."
         )
 
+    # Hanya satu proses Gemma -> FLUX yang boleh memakai GPU pada satu waktu.
+    async with generation_lock:
+        return await process_generation(request)
+
+
+async def process_generation(request: GenerateRequest):
     # --------------------------------------------------------
     # STEP 1
     # GEMMA PROMPT ENHANCEMENT
