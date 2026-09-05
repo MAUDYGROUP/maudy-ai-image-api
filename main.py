@@ -21,7 +21,11 @@ app = FastAPI(
 OLLAMA_URL = "http://ollama-api-vo6ttxy3vu51hlhih4ld4p82:11434"
 OLLAMA_MODEL = "gemma4:e2b"
 
+# Internal Docker URL - digunakan FastAPI untuk komunikasi dengan ComfyUI
 COMFYUI_URL = "http://comfyui-m3eyisjgrhmjvcuzqt0ea6t0:8188"
+
+# Public URL - digunakan browser untuk mengambil hasil gambar
+COMFYUI_PUBLIC_URL = "https://comfyui.maudynetwork.id"
 
 # Maksimum waktu menunggu FLUX selesai
 COMFY_TIMEOUT = 300
@@ -453,11 +457,11 @@ Request:
         # ----------------------------------------------------
 
         image_url = (
-            f"{COMFYUI_URL}/view"
-            f"?filename={quote(filename)}"
-            f"&subfolder={quote(subfolder)}"
-            f"&type={quote(image_type)}"
-        )
+    f"{COMFYUI_PUBLIC_URL}/view"
+    f"?filename={quote(filename)}"
+    f"&subfolder={quote(subfolder)}"
+    f"&type={quote(image_type)}"
+)
 
         return {
             "status": "success",
