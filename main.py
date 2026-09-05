@@ -21,7 +21,7 @@ app = FastAPI(
 OLLAMA_URL = "http://ollama-api-vo6ttxy3vu51hlhih4ld4p82:11434"
 OLLAMA_MODEL = "gemma4:e2b"
 
-COMFYUI_URL = "https://comfyui.maudynetwork.id"
+COMFYUI_URL = "http://comfyui-m3eyisjgrhmjvcuzqt0ea6t0:8188"
 
 # Maksimum waktu menunggu FLUX selesai
 COMFY_TIMEOUT = 300
