@@ -1,4 +1,5 @@
 from fastapi import FastAPI, HTTPException, Header
+from fastapi.responses import Response
 from pydantic import BaseModel
 from urllib.parse import quote
 import httpx
@@ -7,6 +8,8 @@ import asyncio
 import copy
 import os
 import secrets
+import hmac
+import hashlib
 
 app = FastAPI(
     title="Maudy AI Image API",
@@ -24,8 +27,8 @@ OLLAMA_MODEL = "gemma4:e2b"
 # Internal Docker URL - digunakan FastAPI untuk komunikasi dengan ComfyUI
 COMFYUI_URL = "http://comfyui-m3eyisjgrhmjvcuzqt0ea6t0:8188"
 
-# Public URL - digunakan browser untuk mengambil hasil gambar
-COMFYUI_PUBLIC_URL = "https://comfyui.maudynetwork.id"
+# Public URL FastAPI - digunakan browser/Open WebUI untuk mengambil hasil gambar
+PUBLIC_API_URL = "https://ai-image.maudynetwork.id"
 
 # Maksimum waktu menunggu FLUX selesai
 COMFY_TIMEOUT = 300
@@ -226,6 +229,77 @@ def health():
         "resolution": "1024x1024",
         "api_key_configured": bool(AI_IMAGE_API_KEY)
     }
+
+
+# ============================================================
+# SECURE IMAGE PROXY
+# ============================================================
+
+def create_image_signature(filename: str, subfolder: str, image_type: str) -> str:
+    if not AI_IMAGE_API_KEY:
+        raise RuntimeError("AI_IMAGE_API_KEY belum dikonfigurasi.")
+
+    payload = f"{filename}|{subfolder}|{image_type}".encode("utf-8")
+    return hmac.new(
+        AI_IMAGE_API_KEY.encode("utf-8"),
+        payload,
+        hashlib.sha256
+    ).hexdigest()
+
+
+@app.get("/image")
+async def get_image(
+    filename: str,
+    subfolder: str = "",
+    type: str = "output",
+    sig: str = ""
+):
+    if not AI_IMAGE_API_KEY:
+        raise HTTPException(
+            status_code=503,
+            detail="API key belum dikonfigurasi pada server."
+        )
+
+    expected_signature = create_image_signature(filename, subfolder, type)
+
+    if not sig or not secrets.compare_digest(sig, expected_signature):
+        raise HTTPException(
+            status_code=403,
+            detail="Invalid image signature."
+        )
+
+    try:
+        async with httpx.AsyncClient(
+            timeout=60,
+            follow_redirects=True
+        ) as client:
+            image_response = await client.get(
+                f"{COMFYUI_URL}/view",
+                params={
+                    "filename": filename,
+                    "subfolder": subfolder,
+                    "type": type
+                }
+            )
+            image_response.raise_for_status()
+
+    except httpx.TimeoutException:
+        raise HTTPException(
+            status_code=504,
+            detail="ComfyUI image timeout."
+        )
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=502,
+            detail=f"ComfyUI image proxy error: {str(e)}"
+        )
+
+    return Response(
+        content=image_response.content,
+        media_type=image_response.headers.get("content-type", "image/png"),
+        headers={"Cache-Control": "private, max-age=86400"}
+    )
 
 
 # ============================================================
@@ -456,12 +530,19 @@ Request:
         # BUILD IMAGE URL
         # ----------------------------------------------------
 
+        image_signature = create_image_signature(
+            filename,
+            subfolder,
+            image_type
+        )
+
         image_url = (
-    f"{COMFYUI_PUBLIC_URL}/view"
-    f"?filename={quote(filename)}"
-    f"&subfolder={quote(subfolder)}"
-    f"&type={quote(image_type)}"
-)
+            f"{PUBLIC_API_URL}/image"
+            f"?filename={quote(filename)}"
+            f"&subfolder={quote(subfolder)}"
+            f"&type={quote(image_type)}"
+            f"&sig={image_signature}"
+        )
 
         return {
             "status": "success",
